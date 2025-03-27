@@ -2,75 +2,102 @@ import cv2
 import numpy as np
 from transformers import BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
-import IPython.display as display
-from IPython.display import HTML
-from google.colab import files
+import streamlit as st
+import tempfile
+import os
+from io import BytesIO
 
-# Path to the uploaded video file
-video_path = "/content/sample-5s.mp4"  # Change this to your video filename
-output_video_path = "/content/output_video_with_common_caption.mp4"  # Path to save the new video
+# Streamlit App
+def main():
+    st.title("Video Captioning with BLIP")
+    
+    # Upload video file through Streamlit
+    video_file = st.file_uploader("Upload a Video", type=["mp4"])
+    
+    if video_file is not None:
+        # Write the uploaded video to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+            tmp_file.write(video_file.read())
+            video_path = tmp_file.name
+        
+        # Display video
+        st.video(video_file)
 
-# Load the BLIP model and processor for image captioning
-processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+        # Load the BLIP model and processor for image captioning
+        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+        model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
 
-# Open the video file
-cap = cv2.VideoCapture(video_path)
+        # Process the video and overlay caption
+        output_video_path = process_video_with_caption(video_path, processor, model)
+        
+        # Display processed video
+        st.video(output_video_path)
 
-# Check if video opened successfully
-if not cap.isOpened():
-    print("Error: Could not open video.")
-else:
+        # Provide download button for the processed video
+        with open(output_video_path, "rb") as f:
+            st.download_button(
+                label="Download Processed Video",
+                data=f,
+                file_name="output_video_with_common_caption.mp4",
+                mime="video/mp4"
+            )
+
+def process_video_with_caption(video_path, processor, model):
+    # Open the video file
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        st.error("Error: Could not open video.")
+        return None
+    
     # Get the video frame width, height, and FPS (frames per second)
     frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
+    # Create a temporary output video file
+    output_video_path = os.path.join(tempfile.mkdtemp(), "output_video_with_common_caption.mp4")
+    
     # Initialize the video writer to write the new video with captions
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for .mp4 format
     out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
-
+    
     # Process the first frame (or any frame you want) to generate one caption
     ret, frame = cap.read()
     if not ret:
-        print("Error: Could not read frame.")
-    else:
-        # Convert the frame to a PIL image for captioning
-        pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        st.error("Error: Could not read frame.")
+        return None
+    
+    # Convert the frame to a PIL image for captioning
+    pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    
+    # Generate the caption for this frame (the same caption will be used for all frames)
+    inputs = processor(pil_image, return_tensors="pt")
+    out_text = model.generate(**inputs)
+    common_caption = processor.decode(out_text[0], skip_special_tokens=True)
+    
+    # Go back to the start of the video
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    
+    # Read frames and overlay the common caption
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-        # Generate the caption for this frame (the same caption will be used for all frames)
-        inputs = processor(pil_image, return_tensors="pt")
-        out_text = model.generate(**inputs)
-        common_caption = processor.decode(out_text[0], skip_special_tokens=True)
+        # Overlay the common caption on the frame
+        cv2.putText(frame, common_caption, (50, frame_height - 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-        # Go back to the start of the video
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-
-        # Read frames and overlay the common caption
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                print("End of video or error reading frame.")
-                break
-
-            # Overlay the common caption on the frame
-            cv2.putText(frame, common_caption, (50, frame_height - 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-            # Write the frame with the common caption to the output video
-            out.write(frame)
+        # Write the frame with the common caption to the output video
+        out.write(frame)
 
     # Release the video capture and writer objects
     cap.release()
     out.release()
-    print("Video Processing Completed!")
+    
+    st.success("Video Processing Completed!")
+    
+    return output_video_path
 
-# Function to display the processed video in Colab
-def display_video(video_path):
-    # Display the processed video using HTML5 video tag
-    display.display(HTML(f'<video width="640" height="480" controls><source src="{video_path}" type="video/mp4"></video>'))
-
-# Display the processed video with the common caption throughout
-display_video(output_video_path)
-
-# Allow the user to download the processed video
-files.download(output_video_path)
+if __name__ == "__main__":
+    main()

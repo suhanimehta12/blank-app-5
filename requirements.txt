@@ -1,6 +1,6 @@
-cv2
+streamlit
+opencv-python
+transformers
+torch
+pillow
 numpy
-transformers 
-PIL 
-streamlit 
-io 

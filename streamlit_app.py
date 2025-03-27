@@ -1,3 +1,4 @@
+
 import cv2
 import numpy as np
 from transformers import BlipProcessor, BlipForConditionalGeneration
@@ -101,3 +102,4 @@ def process_video_with_caption(video_path, processor, model):
 
 if __name__ == "__main__":
     main()
+

@@ -1,7 +1,6 @@
-streamlit
 cv2
 numpy
-BlipProcessor
-BlipForConditionalGeneration
-Image
-IPython.displayIPython.display 
+transformers 
+PIL 
+streamlit 
+io 
